@@ -209,10 +209,10 @@ int main(int argc, char *argv[])
         workers [i] = thread (worker_thread_function, &requestBuffer, wchans[i], &responseBuffer, m);
     }
     
-    sleep(1);
+    sleep(1); // Allows workers to finish the job before we send QUIT_MSG
     
     /* Join all threads here (Kill each part of the pipeline) */
-        if (isfiletransfer) {
+        if (!isfiletransfer) {
             // Patient threads will finish first, so then we must push a QUIT_MSG so that the workers find it
             for (int i=0; i<p; i++) {
                 patients[i].join(); } // Way to wait for a thread to finish
@@ -226,7 +226,7 @@ int main(int argc, char *argv[])
         for (int i=0; i<w; i++) 
             workers[i].join(); // Workers are done here
 
-        if (isfiletransfer) {
+        if (!isfiletransfer) {
             //Send kill signal to histogram threads
             Response r {-1,0};
             for (int i=0; i<h; i++) {
