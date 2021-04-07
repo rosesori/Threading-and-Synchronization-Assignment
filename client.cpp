@@ -168,26 +168,25 @@ int main(int argc, char *argv[])
     BoundedBuffer requestBuffer(b);
     BoundedBuffer responseBuffer(b);
 	HistogramCollection hc;
-
-    // Create w worker CHANNELS
-    FIFORequestChannel* wchans [w];
-    for (int i=0; i<w; i++) {
-        MESSAGE_TYPE m = NEWCHANNEL_MSG;
-        chan->cwrite (&m, sizeof(m));
-        char newchanname [100];
-        chan->cread (newchanname, sizeof(newchanname));
-        wchans[i] = new FIFORequestChannel (newchanname, FIFORequestChannel::CLIENT_SIDE);
-    }
-	
+    
     // Start Stopwatch
     struct timeval start, end;
     gettimeofday (&start, 0);
 
-    // file request
-    if (isfiletransfer) {
+    if (isfiletransfer) { // file request
         thread workers [w];
 
         thread filethread(file_thread_function, filename, &requestBuffer, chan, m );
+
+        // Create w worker CHANNELS
+        FIFORequestChannel* wchans [w];
+        for (int i=0; i<w; i++) {
+            MESSAGE_TYPE m = NEWCHANNEL_MSG;
+            chan->cwrite (&m, sizeof(m));
+            char newchanname [100];
+            chan->cread (newchanname, sizeof(newchanname));
+            wchans[i] = new FIFORequestChannel (newchanname, FIFORequestChannel::CLIENT_SIDE);
+        }
         for (int i=0; i<w; i++) {
             workers [i] = thread (worker_thread_function, &requestBuffer, wchans[i], &responseBuffer, m);
         }
@@ -208,6 +207,15 @@ int main(int argc, char *argv[])
         for (int i=0; i<p; i++){
             Histogram* h = new Histogram (10,-2.0, 2.0); // Set bins here
             hc.add(h);
+        }
+        // Create w worker CHANNELS
+        FIFORequestChannel* wchans [w];
+        for (int i=0; i<w; i++) {
+            MESSAGE_TYPE m = NEWCHANNEL_MSG;
+            chan->cwrite (&m, sizeof(m));
+            char newchanname [100];
+            chan->cread (newchanname, sizeof(newchanname));
+            wchans[i] = new FIFORequestChannel (newchanname, FIFORequestChannel::CLIENT_SIDE);
         }
 
         thread patients [p];
