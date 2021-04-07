@@ -168,14 +168,14 @@ int main(int argc, char *argv[])
     BoundedBuffer requestBuffer(b);
     BoundedBuffer responseBuffer(b);
 	HistogramCollection hc;
-    
+
     // Start Stopwatch
     struct timeval start, end;
     gettimeofday (&start, 0);
 
+    // Continue with thread creation and data/file requesting
     if (isfiletransfer) { // file request
         thread workers [w];
-
         thread filethread(file_thread_function, filename, &requestBuffer, chan, m );
 
         // Create w worker CHANNELS
@@ -187,20 +187,24 @@ int main(int argc, char *argv[])
             chan->cread (newchanname, sizeof(newchanname));
             wchans[i] = new FIFORequestChannel (newchanname, FIFORequestChannel::CLIENT_SIDE);
         }
+
+        // Create w worker threads
         for (int i=0; i<w; i++) {
             workers [i] = thread (worker_thread_function, &requestBuffer, wchans[i], &responseBuffer, m);
         }
 
         sleep(1); // Allows workers to finish the job before we send QUIT_MSG
 
+        // Send w QUIT_MSG's so that each worker stops working
         for (int i=0; i<w; i++) {
             MESSAGE_TYPE q = QUIT_MSG;
             requestBuffer.push ((char*)&q, sizeof(MESSAGE_TYPE));
         }
-        filethread.join();
 
+        // Join threads
+        filethread.join();
         for (int i=0; i<w; i++) 
-            workers[i].join(); // Workers are done here
+            workers[i].join();
     }
     else { // data request
         // Make histograms and adding to the histogram collection hc
