@@ -164,6 +164,7 @@ int main(int argc, char *argv[])
         }
     }
     
+    // Instantiate main control channel, BoundedBuffers, and HistogramCollection
 	FIFORequestChannel* chan = new FIFORequestChannel("control", FIFORequestChannel::CLIENT_SIDE);
     BoundedBuffer requestBuffer(b);
     BoundedBuffer responseBuffer(b);
