@@ -47,6 +47,7 @@ void worker_thread_function(BoundedBuffer* requestBuffer, FIFORequestChannel* wc
         else if (*m == FILE_MSG) {
             /* send the file request, get the response back, and when you get the response you
             dont have to push to the responseBuffer at all- you just straight away write to the file */
+            //requestBuffer->pop (buf, sizeof(buf));
             filemsg* fm = (filemsg*) buf;
             string filename = (char*)(fm+1);
 
@@ -69,6 +70,7 @@ void worker_thread_function(BoundedBuffer* requestBuffer, FIFORequestChannel* wc
         }
     }
 }
+
 void histogram_thread_function (BoundedBuffer* responseBuffer, HistogramCollection* hc){
     char buf[1024];
     while (true) {
@@ -115,17 +117,17 @@ int main(int argc, char *argv[])
 {
     int n = 100;    //default number of requests per "patient"
     int p = 15;     // number of patients [1,15]
-    int w = 50;    //default number of worker threads
+    int w = 5;    //default number of worker threads
     int b = 1024; 	// default capacity of the request buffer, you should change this default
 	int m = MAX_MESSAGE; 	// default capacity of the message buffer
     srand(time_t(NULL));
     int h = 5;      // number of histogram threads
-    string filename;
+    string filename = "1.csv";
     bool isfiletransfer = false;
     
     // Getting command line arguments
     int c;
-    while ((c = getopt (argc, argv, "n:p:w:b:m:f:h:")) != -1){
+    while ((c = getopt (argc, argv, "n:p:w:b:m:fh:")) != -1){
         switch (c){
             case 'n': // Number of requests per patient
                 n = atoi (optarg);
@@ -152,10 +154,14 @@ int main(int argc, char *argv[])
         }
     }
     
+    // Fork and run server
     int pid = fork();
     if (pid == 0){
-		// modify this to pass along m
-        execl ("server", "server", (char *)NULL);
+		char* args [] = {"./server", "-m", (char *) to_string(m).c_str(), NULL};
+        if (execvp (args [0], args) < 0){
+            perror ("exec filed");
+            exit (0);
+        }
     }
     
 	FIFORequestChannel* chan = new FIFORequestChannel("control", FIFORequestChannel::CLIENT_SIDE);
@@ -173,28 +179,42 @@ int main(int argc, char *argv[])
         wchans[i] = new FIFORequestChannel (newchanname, FIFORequestChannel::CLIENT_SIDE);
     }
 	
-    // Make histograms and adding to the histogram collection hc
-    for (int i=0; i<p; i++){
-        Histogram* h = new Histogram (10,-2.0, 2.0); // Set bins here
-        hc.add(h);
-    }
-
     // Start Stopwatch
     struct timeval start, end;
     gettimeofday (&start, 0);
-    
-    /* Start all threads here -----------------------------------------------------------------------*/
-    thread patients [p];
-    thread workers [w];
-    thread hists [h];
 
-    // Only for file transfers
+    // file request
     if (isfiletransfer) {
-        thread filethread(file_thread_function, filename, &requestBuffer, chan, m);
+        thread workers [w];
 
-    } else { // Not a file transfer
+        thread filethread(file_thread_function, filename, &requestBuffer, chan, m );
+        for (int i=0; i<w; i++) {
+            workers [i] = thread (worker_thread_function, &requestBuffer, wchans[i], &responseBuffer, m);
+        }
+
+        sleep(1); // Allows workers to finish the job before we send QUIT_MSG
+
+        for (int i=0; i<w; i++) {
+            MESSAGE_TYPE q = QUIT_MSG;
+            requestBuffer.push ((char*)&q, sizeof(MESSAGE_TYPE));
+        }
+        filethread.join();
+
+        for (int i=0; i<w; i++) 
+            workers[i].join(); // Workers are done here
+    }
+    else { // data request
+        // Make histograms and adding to the histogram collection hc
+        for (int i=0; i<p; i++){
+            Histogram* h = new Histogram (10,-2.0, 2.0); // Set bins here
+            hc.add(h);
+        }
+
+        thread patients [p];
+        thread workers [w];
+        thread hists [h];
+
         // Create p patient threads 
-        
         for (int i=0; i<p; i++) {
             patients [i] = thread (patient_thread_function, i+1, n, &requestBuffer );
         }
@@ -202,47 +222,36 @@ int main(int argc, char *argv[])
         for (int i=0; i<h; i++) {
             hists [i] = thread (histogram_thread_function, &responseBuffer, &hc );
         }
-    }
-    
-    // Create w worker threads
-    for (int i=0; i<w; i++) {
-        workers [i] = thread (worker_thread_function, &requestBuffer, wchans[i], &responseBuffer, m);
-    }
-    
-    sleep(1); // Allows workers to finish the job before we send QUIT_MSG
-    
-    /* Join all threads here (Kill each part of the pipeline) */
-        if (!isfiletransfer) {
-            // Patient threads will finish first, so then we must push a QUIT_MSG so that the workers find it
-            for (int i=0; i<p; i++) {
-                patients[i].join(); } // Way to wait for a thread to finish
+        // Create w worker threads
+        for (int i=0; i<w; i++) {
+            workers [i] = thread (worker_thread_function, &requestBuffer, wchans[i], &responseBuffer, m);
         }
 
+        sleep(1); // Allows workers to finish the job before we send QUIT_MSG
+
+        // Patient threads will finish first, so then we must push a QUIT_MSG so that the workers find it
+        for (int i=0; i<p; i++) {
+            patients[i].join(); } // Way to wait for a thread to finish
         for (int i=0; i<w; i++) {
             MESSAGE_TYPE q = QUIT_MSG;
             requestBuffer.push ((char*)&q, sizeof(MESSAGE_TYPE));
         }
-        //filethread.join();
         for (int i=0; i<w; i++) 
             workers[i].join(); // Workers are done here
-
-        if (!isfiletransfer) {
-            //Send kill signal to histogram threads
+        //Send kill signal to histogram threads
             Response r {-1,0};
             for (int i=0; i<h; i++) {
                 responseBuffer.push((char*)&r, sizeof(r));
             }
             for (int i=0; i<h; i++)
                 hists[i].join(); // Histograms die one after another
-        }
- 
-            
+        
+        // Print the results
+	    hc.print ();
+    }
 
 	// End stopwatch
     gettimeofday (&end, 0);
-
-    // Print the results
-	hc.print ();
 
     // Format the time difference we recorded
     int secs = (end.tv_sec * 1e6 + end.tv_usec - start.tv_sec * 1e6 - start.tv_usec)/(int) 1e6;

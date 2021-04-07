@@ -123,7 +123,6 @@ void process_unknown_request(FIFORequestChannel *rc){
 	rc->cwrite (&a, sizeof (a));
 }
 
-
 int process_request(FIFORequestChannel *rc, char* _request)
 {
 	MESSAGE_TYPE m = *(MESSAGE_TYPE *) _request;
