@@ -127,7 +127,7 @@ int main(int argc, char *argv[])
     
     // Getting command line arguments
     int c;
-    while ((c = getopt (argc, argv, "n:p:w:b:m:fh:")) != -1){
+    while ((c = getopt (argc, argv, "n:p:w:b:m:f:h:")) != -1){
         switch (c){
             case 'n': // Number of requests per patient
                 n = atoi (optarg);
